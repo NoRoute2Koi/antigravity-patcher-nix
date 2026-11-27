@@ -92,3 +92,8 @@ Required tools (`curl`, `unzip`, `zip`, `python3`) are provided via `shell.nix`:
 ```bash
 nix-shell --run ./patch-vsix.sh
 ```
+
+## License
+
+This project is licensed under the GNU General Public License v3.0. See [LICENSE](LICENSE) for details.
+

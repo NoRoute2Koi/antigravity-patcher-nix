@@ -92,3 +92,8 @@
 ```bash
 nix-shell --run ./patch-vsix.sh
 ```
+
+## Лицензия
+
+Проект распространяется под лицензией GNU General Public License v3.0. Подробности см. в [LICENSE](LICENSE).
+
