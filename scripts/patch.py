@@ -31,11 +31,16 @@ UPSTREAM_PART2_RE = re.compile(
 MIN_PART1_RE = re.compile(
     r"""(([A-Za-z_$][\w$]*)\.appendLine\(\s*["']\[INSTALL\]\s*Checking Antigravity releases\.\.\.["']\s*\);?)"""
 )
+MIN_ACQUIRE_RE = re.compile(
+    r"""(let la=t!=null\?t:Ac\(\),ua=\(0,pa\.dirname\)\(la\);)"""
+)
 MIN_CHANNEL_RE = re.compile(r"""let\s+([A-Za-z_$][\w$]*)=db&&\$c&&a&&!Rl&&!d;""")
 MIN_REBUILD_RE = re.compile(
     r"""let\s+([A-Za-z_$][\w$]*)=db&&\$c&&!a&&qc!==void 0&&Kb\(qc,rb\)&&Kb\(rb,qc\)&&Dd!==void 0&&If!==void 0&&!Rl;"""
 )
-MIN_BC_RE = re.compile(r"""function Bc\(([^)]*)\)\{return ([^}]+)\?a:Ac\(\)\}""")
+MIN_AC_RE = re.compile(
+    r"""function Ac\(\)\{var a=\(0,oa\.homedir\)\(\);return\(0,pa\.join\)\(a,"\.gemini","bin",`agy\$\{process\.platform==="win32"\?"\.exe":""\}`\)\}"""
+)
 
 
 @dataclass(frozen=True)
@@ -278,25 +283,42 @@ def patch_vscode(path: Path, fallback_bin: str | None) -> None:
             raise RuntimeError(f"VS Code extension anchor not found in {path}")
         out_var = m1.group(2)
         extra_cand = f",{json.dumps(fallback_bin)}" if fallback_bin else ""
-        inject = (
-            f"{{const __c=[la,(0,pa.join)((0,pa.dirname)(la),'antigravity'+((0,pa.extname)(la)||'')){extra_cand}];"
+        candidates_expr = (
+            f"[la,(0,pa.join)((0,pa.dirname)(la),'antigravity'+((0,pa.extname)(la)||'')),"
+            f"...(process.env.PATH||'').split(pa.delimiter).filter(Boolean).map(d=>(0,pa.join)(d,'agy'+(process.platform==='win32'?'.exe':'')))"
+            f"{extra_cand}]"
+        )
+        inject_action = (
+            f"{{const __c={candidates_expr};"
             f"for(const __p of __c){{if(__p&&(0,na.existsSync)(__p)){{{out_var}.appendLine("
-            f"'[INSTALL] Existing binary found at '+__p+'. Skipping version check and re-download.');return __p;}}}}"
+            f"'[INSTALL] Existing binary found at '+__p+'. Skipping version check and re-download.');"
+            f"return{{installPath:__p,fellBackToExisting:!1}};}}}}"
             f"}}"
         )
         text = raw
         if "[INSTALL] Existing binary found at " not in text:
-            text = text[: m1.end()] + inject + text[m1.end() :]
+            text = text[: m1.end()] + inject_action + text[m1.end() :]
+        if not MIN_ACQUIRE_RE.search(text):
+            raise RuntimeError(f"VS Code extension acquireInstalledBinaryPath anchor not found in {path}")
+        inject_td = (
+            f"for(const __p of {candidates_expr}){{if(__p&&(0,na.existsSync)(__p)){{"
+            f"m.appendLine('[INSTALL] Using existing binary at '+__p+'. Skipping update check.');"
+            f"H==null||H({{cacheHit:!0,downloadReason:'up_to_date'}});return __p;}}}}"
+        )
+        text = MIN_ACQUIRE_RE.sub(lambda m: m.group(1) + inject_td, text, count=1)
         if MIN_CHANNEL_RE.search(text):
             text = MIN_CHANNEL_RE.sub(r"let \1=!1;", text, count=1)
         if MIN_REBUILD_RE.search(text):
             text = MIN_REBUILD_RE.sub(r"let \1=!1;", text, count=1)
         if fallback_bin:
             fb = json.dumps(fallback_bin)
-            if not MIN_BC_RE.search(text):
-                raise RuntimeError(f"VS Code extension Bc() helper not found in {path}")
-            text = MIN_BC_RE.sub(
-                lambda m: f"function Bc({m.group(1)}){{const __d=Ac();return {m.group(2)}?a:((0,na.existsSync)(__d)?__d:{fb})}}",
+            if not MIN_AC_RE.search(text):
+                raise RuntimeError(f"VS Code extension Ac() helper not found in {path}")
+            text = MIN_AC_RE.sub(
+                lambda _: (
+                    'function Ac(){var a=(0,oa.homedir)(),__d=(0,pa.join)(a,".gemini","bin",`agy${process.platform==="win32"?".exe":""}`);'
+                    f"return (0,na.existsSync)(__d)?__d:{fb}}}"
+                ),
                 text,
                 count=1,
             )
